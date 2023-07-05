@@ -2,10 +2,10 @@
 SHELL := /bin/bash
 SCRIPT_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 VENV_PATH := $(SCRIPT_PATH)/.venv/bin/activate
-MODULE_PATH := $(SCRIPT_PATH)/rope-robot-drm-protocol/src/python
+PROMOTIONS_PATH := $(SCRIPT_PATH)/src/qt_promotions
 PYQT5_RESOURCE_PATH := $(SCRIPT_PATH)/src/ui_generated/pyqt5
 SITE_PACKAGES_PATH := $(shell source $(VENV_PATH) && python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
-PTH_FILE_PATH := $(SITE_PACKAGES_PATH)/rope-robot-drm-protocol.pth
+PTH_FILE_PATH := $(SITE_PACKAGES_PATH)/qt_promotions.pth
 PYQT5_RESOURCE_PTH := $(SITE_PACKAGES_PATH)/pyqt5-resource-file.pth
 
 # Default target executed when no arguments given to make.
@@ -24,6 +24,8 @@ environment:
 	# Install other dependencies
 	sudo apt-get install -y libxcb-xinerama0
 
+	unset GTK_PATH
+
 	# Create a Python virtual environment
 	python3 -m venv .venv
 	source $(VENV_PATH)
@@ -35,24 +37,24 @@ environment:
 
 # Target for building
 build:
-	# cd $(SCRIPT_PATH)/scripts && ./convert_ui_to_py.sh
+	cd $(SCRIPT_PATH)/scripts && ./convert_ui_to_py.sh
 	# cd $(SCRIPT_PATH)/rope-robot-drm-protocol && make python
-	# echo $(MODULE_PATH) > $(PTH_FILE_PATH)
+	echo $(PROMOTIONS_PATH) > $(PTH_FILE_PATH)
 	# echo $(PYQT5_RESOURCE_PATH) > $(PYQT5_RESOURCE_PTH)
 .PHONY: build
 
 # Target for running the main script
-run: build
-	source $(VENV_PATH) && python3 src/main.py
-.PHONY: run
+run_face_detection: build
+	source $(VENV_PATH) && python3 src/face_detection_main.py
+.PHONY: run_face_detection
+
+run_face_classifier: build
+	source $(VENV_PATH) && python3 src/face_classifier_main.py
+.PHONY: run_face_classifier
 
 # Target for running tests
 run_tests: build
-	source $(VENV_PATH) && cd $(SCRIPT_PATH)/src && python -m tests.test_device_model
-	source $(VENV_PATH) && cd $(SCRIPT_PATH)/src && python -m tests.test_drm_messages
-	source $(VENV_PATH) && cd $(SCRIPT_PATH)/src && python -m tests.ipc_test
 .PHONY: run_tests
 
 run_hw_tests: build
-	source $(VENV_PATH) && cd $(SCRIPT_PATH)/src && python -m tests.test_drm_protocol_client
 .PHONY: run_hw_tests

@@ -24,8 +24,8 @@ for ui_file in $UI_PATH/*.ui; do
 done 
 
 # Convert resource file
-RESOURCE_FILE="$UI_PATH/assets/resource.qrc"
-RESOURCE_PY_FILE="$PY_PATH/resource_rc.py"
-echo "Converting $RESOURCE_FILE to $RESOURCE_PY_FILE"
-pyrcc5 $RESOURCE_FILE -o $RESOURCE_PY_FILE
+# RESOURCE_FILE="$UI_PATH/assets/resource.qrc"
+# RESOURCE_PY_FILE="$PY_PATH/resource_rc.py"
+# echo "Converting $RESOURCE_FILE to $RESOURCE_PY_FILE"
+# pyrcc5 $RESOURCE_FILE -o $RESOURCE_PY_FILE
 

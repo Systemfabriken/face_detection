@@ -27,7 +27,6 @@ class Thread(QtCore.QThread):
 
     def run(self):
         cap = cv2.VideoCapture(0)
-        print(os.getcwd())
         net = cv2.dnn.readNetFromCaffe("./src/face-detection/deploy.prototxt.txt", "./src/face-detection/res10_300x300_ssd_iter_140000.caffemodel")
 
         while True:
