@@ -1,0 +1,3 @@
+[submodule "src/face-detection"]
+	path = src/face-detection
+	url = https://github.com/keyurr2/face-detection.git

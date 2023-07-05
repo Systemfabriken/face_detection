@@ -1,5 +1,7 @@
+import os
 import cv2
 from PyQt5 import QtCore, QtGui, QtWidgets
+import numpy as np
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -25,15 +27,24 @@ class Thread(QtCore.QThread):
 
     def run(self):
         cap = cv2.VideoCapture(0)
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        print(os.getcwd())
+        net = cv2.dnn.readNetFromCaffe("./src/face-detection/deploy.prototxt.txt", "./src/face-detection/res10_300x300_ssd_iter_140000.caffemodel")
 
         while True:
             ret, frame = cap.read()
             if ret:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-                for (x,y,w,h) in faces:
-                    cv2.rectangle(frame,(x,y),(x+w,y+h),(255,0,0),2)
+                (h, w) = frame.shape[:2]
+                blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300), (104.0, 177.0, 123.0))
+                net.setInput(blob)
+                detections = net.forward()
+
+                for i in range(0, detections.shape[2]):
+                    confidence = detections[0, 0, i, 2]
+                    if confidence > 0.5:
+                        box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                        (startX, startY, endX, endY) = box.astype("int")
+                        cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 0, 255), 2)
+
                 rgbImage = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 h, w, ch = rgbImage.shape
                 bytesPerLine = ch * w
