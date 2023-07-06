@@ -19,63 +19,6 @@ def get_available_cameras(max_cameras=10):
         cap.release()
     return cameras
 
-# class Ui_MainWindow(object):
-#     def setupUi(self, MainWindow):
-#         MainWindow.setObjectName("MainWindow")
-#         MainWindow.resize(800, 600)
-#         self.centralwidget = QtWidgets.QWidget(MainWindow)
-#         self.centralwidget.setObjectName("centralwidget")
-
-#         # Create a 3x3 grid of labels to display the images
-#         self.gridLayout = QtWidgets.QGridLayout(self.centralwidget)
-#         self.labels = [[QtWidgets.QLabel(self.centralwidget) for _ in range(3)] for _ in range(3)]
-#         for i in range(3):
-#             for j in range(3):
-#                 self.gridLayout.addWidget(self.labels[i][j], i, j)
-
-#         # Create buttons to start the capture process, capture an image, and confirm the image
-#         self.startButton = QtWidgets.QPushButton("Start", self.centralwidget)
-#         self.captureButton = QtWidgets.QPushButton("Capture", self.centralwidget)
-#         self.confirmButton = QtWidgets.QPushButton("Confirm", self.centralwidget)
-#         self.gridLayout.addWidget(self.startButton, 3, 0)
-#         self.gridLayout.addWidget(self.captureButton, 3, 1)
-#         self.gridLayout.addWidget(self.confirmButton, 3, 2)
-
-#         MainWindow.setCentralWidget(self.centralwidget)
-
-#         # Connect the buttons to their respective methods
-#         self.startButton.clicked.connect(self.start_capture)
-#         self.captureButton.clicked.connect(self.capture_image)
-#         self.confirmButton.clicked.connect(self.confirm_image)
-
-#         self.cap = None
-#         self.current_image = None
-#         self.current_position = (0, 0)
-
-#     def start_capture(self):
-#         # Open the webcam
-#         self.cap = cv2.VideoCapture(0)
-
-#     def capture_image(self):
-#         # Capture an image from the webcam
-#         ret, frame = self.cap.read()
-#         if ret:
-#             # Convert the image to QPixmap and display it on the current label
-#             height, width, channel = frame.shape
-#             bytesPerLine = 3 * width
-#             qImg = QtGui.QImage(frame.data, width, height, bytesPerLine, QtGui.QImage.Format_RGB888).rgbSwapped()
-#             self.labels[self.current_position[0]][self.current_position[1]].setPixmap(QtGui.QPixmap.fromImage(qImg))
-
-#             # Store the current image for confirmation
-#             self.current_image = frame
-
-#     def confirm_image(self):
-#         # Save the current image to a file
-#         cv2.imwrite(f"image_{self.current_position[0]}_{self.current_position[1]}.jpg", self.current_image)
-
-#         # Move to the next position
-#         self.current_position = ((self.current_position[0] + (self.current_position[1] + 1) // 3) % 3, (self.current_position[1] + 1) % 3)
-
 class CameraThread(QtCore.QThread):
     changePixmap = QtCore.pyqtSignal(QtGui.QImage)
 
@@ -129,7 +72,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.capture_image_button.setEnabled(False)
         self.capture_image_button.clicked.connect(self.capture_image)
-        self.raw_frames = []
+        self.raw_frames: dict = dict()
 
         self.preprocess_images_button.setEnabled(False)
         self.preprocess_images_button.clicked.connect(self.preprocess_images)
@@ -192,13 +135,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if self.camera_thread is not None:
             label = getattr(self, self.currently_selected_label)
             label.setPixmap(QtGui.QPixmap.fromImage(self.camera_thread.curr_img_320_240))
-            self.raw_frames.append(self.camera_thread.raw_frame)
-            if len(self.raw_frames) == 9:
+            self.raw_frames[self.currently_selected_label] = (self.camera_thread.raw_frame, None)
+            if len(self.raw_frames) > 0:
                 self.preprocess_images_button.setEnabled(True)
 
     def preprocess_images(self):
         print("Preprocessing images...")
-        for frame in self.raw_frames:
+        for frame_name in self.raw_frames:
+            frame, face_box = self.raw_frames[frame_name]
+            if face_box is not None:
+                continue
+
             (h, w) = frame.shape[:2]
             blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300), (104.0, 177.0, 123.0))
             self.net.setInput(blob)
@@ -210,6 +157,16 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
                     box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
                     (startX, startY, endX, endY) = box.astype("int")
                     cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 0, 255), 2)
+                    self.raw_frames[frame_name] = (frame, box.astype("int"))
+
+            rgbImage = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgbImage.shape
+            bytesPerLine = ch * w
+            convertToQtFormat = QtGui.QImage(rgbImage.data, w, h, bytesPerLine, QtGui.QImage.Format_RGB888)
+            label = getattr(self, frame_name)
+            img_320_240 = convertToQtFormat.scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            label.setPixmap(QtGui.QPixmap.fromImage(img_320_240))
+            
 
 if __name__ == '__main__':
     import sys

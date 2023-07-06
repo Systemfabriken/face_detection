@@ -16,7 +16,7 @@ default_target: build
 environment:
 	# Install Python3 and pip3
 	sudo apt update
-	sudo apt install -y python3 python3-pip
+	sudo apt install -y python3 python3-pip python3-venv
 
 	# Install Qt5 and Qt Designer
 	sudo apt install -y qttools5-dev-tools
