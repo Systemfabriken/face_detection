@@ -7,7 +7,9 @@ import pickle
 
 # Local imports
 from ui_generated.pyqt5.classification_main_window import Ui_MainWindow
+from ui_generated.pyqt5.modify_person_dialog import Ui_Dialog as ModifyPersonDialog
 from face_identification.classifier import extract_faces, extract_features
+from modify_person_dialog import ModifyPersonDialog
 
 def get_available_cameras(max_cameras=10) -> list[int]:
     cameras = []
@@ -86,13 +88,50 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.model["images"] = dict()
         self.model["currently_selected_label"] = None
         self.model["features"] = None
+        self.model["persons"] = dict()
+
+        self.database_table.setRowCount(0)
+        self.database_table.selectionModel().selectionChanged.connect(self.row_selected)
+
+        self.add_person_button.clicked.connect(self.add_person)
+        self.remove_person_button.clicked.connect(lambda: print("Removing person..."))
+        self.edit_person_button.clicked.connect(lambda: print("Editing person..."))
 
         self.init_from_model()
 
-        self.process_images_button.setEnabled(False)
-        self.process_images_button.clicked.connect(self.process_images)
-
         self.show()
+
+    def add_person(self):
+        dialog = ModifyPersonDialog()
+        result = dialog.exec_()
+        if result == QtWidgets.QDialog.Accepted:
+            person = dialog.get_person()
+            if person.name in self.model["persons"]:
+                self.statusbar.showMessage("Person already exists")
+                return
+            self.add_person_to_table(person)
+            print(f"Adding person {person.name} with status {person.status.value}")
+        else:
+            print("Adding person cancelled")
+
+    def add_person_to_table(self, person):
+        row_position = self.database_table.rowCount()
+        self.database_table.insertRow(row_position)
+        self.database_table.setItem(row_position, 0, QtWidgets.QTableWidgetItem(person.name))
+        self.database_table.setItem(row_position, 1, QtWidgets.QTableWidgetItem(person.status.value))
+        
+        # Add the Person object to the dictionary.
+        self.model["persons"][person.name] = person
+
+    def row_selected(self, selected):
+        selected_rows = selected.indexes()
+        if selected_rows:
+            row = selected_rows[0].row()
+            # Retrieve the name of the person from the table.
+            person_name = self.database_table.item(row, 0).text()
+            # Retrieve the corresponding Person object from the dictionary.
+            selected_person = self.model["persons"][person_name]
+            print(f"Selected person: {selected_person.name} with status {selected_person.status.value}")
 
     def save_model(self):
         print("Saving model...")
@@ -113,10 +152,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if self.currently_selected_label is not None:
             self.on_image_clicked(self.currently_selected_label)
         self.show_model()
-        if len(self.model["images"]) > 0:
-            self.process_images_button.setEnabled(True)
-        else:
-            self.process_images_button.setEnabled(False)
 
     @QtCore.pyqtSlot(QtGui.QImage)
     def setCameraImage(self, image):
@@ -161,8 +196,6 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             label = getattr(self, self.currently_selected_label)
             label.setPixmap(QtGui.QPixmap.fromImage(self.camera_thread.curr_img_320_240))
             self.model["images"][self.currently_selected_label] = (self.camera_thread.raw_frame, None)
-            if len(self.model["images"]) > 0:
-                self.process_images_button.setEnabled(True)
 
     def process_images(self):
         print("Processing images...")
@@ -210,6 +243,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             else:
                 qimage = convert_to_qt_format(face).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
                 label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+                
+        person_names = list(self.model["persons"].keys())
+        self.database_table.setRowCount(len(person_names))
+        for idx, person_name in enumerate(person_names):
+            person = self.model["persons"][person_name]
+            self.database_table.setItem(idx, 0, QtWidgets.QTableWidgetItem(person.name))
+            self.database_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(person.status.value))
 
 if __name__ == '__main__':
     import sys

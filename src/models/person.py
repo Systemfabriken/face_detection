@@ -60,9 +60,14 @@ class Face:
         self.setattr(perspective, FaceImage(image, extract_face(image)))
 
 class Person():
-    def __init__(self, name: str):
+
+    from enum import Enum
+    class Status(Enum):
+        PENDING = "Pending"
+        ALLOWED = "Allowed"
+        DENIED = "Denied"
+
+    def __init__(self, name: str, status: Status = Status.PENDING):
         self.name: str = name
+        self.status = status
         self.face: Face = None
-
-
-    
