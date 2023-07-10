@@ -17,12 +17,12 @@ class ClickableLabel(QtWidgets.QLabel):
         if not self.is_selected:
             print("Selected " + self.objectName())
             self.border_style = BORDER_STYLE_SELECTED
-            self.setStyleSheet(BORDER_STYLE_SELECTED if not self.is_invalid else BORDER_STYLE_INVALID + " background-color: rgb(222, 221, 218);")
+            self.setStyleSheet((BORDER_STYLE_SELECTED if not self.is_invalid else BORDER_STYLE_INVALID) + " background-color: rgb(222, 221, 218);")
             self.is_selected = True
         else:
             print("Unselected " + self.objectName())
             self.border_style = BORDER_STYLE_UNSELECTED
-            self.setStyleSheet(BORDER_STYLE_UNSELECTED if not self.is_invalid else BORDER_STYLE_INVALID + " background-color: rgb(222, 221, 218);")
+            self.setStyleSheet((BORDER_STYLE_UNSELECTED if not self.is_invalid else BORDER_STYLE_INVALID) + " background-color: rgb(222, 221, 218);")
             self.is_selected = False
 
         self.on_click.emit(self.objectName())

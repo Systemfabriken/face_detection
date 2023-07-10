@@ -89,13 +89,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.model["currently_selected_label"] = None
         self.model["features"] = None
         self.model["persons"] = dict()
+        self.selected_person = None
 
         self.database_table.setRowCount(0)
         self.database_table.selectionModel().selectionChanged.connect(self.row_selected)
 
         self.add_person_button.clicked.connect(self.add_person)
-        self.remove_person_button.clicked.connect(lambda: print("Removing person..."))
-        self.edit_person_button.clicked.connect(lambda: print("Editing person..."))
+        self.remove_person_button.clicked.connect(self.remove_person)
+        self.edit_person_button.clicked.connect(self.edit_person)
 
         self.init_from_model()
 
@@ -114,6 +115,30 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             print("Adding person cancelled")
 
+    def edit_person(self):
+        if self.selected_person is None:
+            self.statusbar.showMessage("No person selected")
+            return
+        dialog = ModifyPersonDialog()
+        dialog.set_name(self.selected_person.name)
+        dialog.set_status(self.selected_person.status)
+        dialog.setWindowTitle("Edit Person")
+        result = dialog.exec_()
+        if result == QtWidgets.QDialog.Accepted:
+            self.remove_person()
+            person = dialog.get_person()
+            self.add_person_to_table(person)
+            print(f"Edited person {person.name} with status {person.status.value}")
+
+    def remove_person(self):
+        if self.selected_person is None:
+            self.statusbar.showMessage("No person selected")
+            return
+        self.database_table.removeRow(self.database_table.currentRow())
+        del self.model["persons"][self.selected_person.name]
+        self.statusbar.showMessage(self.selected_person.name + " removed")
+        self.selected_person = None
+
     def add_person_to_table(self, person):
         row_position = self.database_table.rowCount()
         self.database_table.insertRow(row_position)
@@ -122,16 +147,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         
         # Add the Person object to the dictionary.
         self.model["persons"][person.name] = person
+        self.statusbar.showMessage(person.name + " added")
 
     def row_selected(self, selected):
         selected_rows = selected.indexes()
         if selected_rows:
             row = selected_rows[0].row()
             # Retrieve the name of the person from the table.
-            person_name = self.database_table.item(row, 0).text()
+            selected_person_name = self.database_table.item(row, 0).text()
             # Retrieve the corresponding Person object from the dictionary.
-            selected_person = self.model["persons"][person_name]
-            print(f"Selected person: {selected_person.name} with status {selected_person.status.value}")
+            self.selected_person = self.model["persons"][selected_person_name]
+            print(f"Selected person: {self.selected_person.name} with status {self.selected_person.status.value}")
 
     def save_model(self):
         print("Saving model...")
