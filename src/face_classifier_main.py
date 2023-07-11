@@ -10,7 +10,7 @@ import pickle
 # Local imports
 from ui_generated.pyqt5.classification_main_window import Ui_MainWindow
 from ui_generated.pyqt5.modify_person_dialog import Ui_Dialog as ModifyPersonDialog
-from face_identification.classifier import extract_faces, extract_face, extract_features, extract_feature, train_classifier, predict
+from face_identification.classifier import extract_single_face_multi_images, extract_single_face_single_image, extract_features, extract_feature, train_classifier, predict
 from modify_person_dialog import ModifyPersonDialog
 from models.person import Person
 
@@ -142,8 +142,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         dialog.setWindowTitle("Edit Person")
         result = dialog.exec_()
         if result == QtWidgets.QDialog.Accepted:
-            self.remove_person()
+            old_person = self.selected_person
             person = dialog.get_person()
+            # Copy all data from the old person to the new person.
+            person.face = old_person.face
+            # Remove the old person from the dictionary.
+            self.remove_person()
+            # Add the new person to the dictionary.
             self.add_person_to_table(person)
             print(f"Edited person {person.name} with status {person.status.value}")
 
@@ -158,19 +163,26 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
 
     def open_image(self):
         print("Opening image...")
-        if self.selected_person is None or self.currently_selected_label is None:
-            self.statusbar.showMessage("No person selected or no image selected")
-            return
-        file_name = QFileDialog.getOpenFileName(self, "Open Image", "", "Image Files (*.png *.jpg *.jpeg *.bmp)")
-        if not file_name[0]:
-            return
-        image = cv2.imread(file_name[0])
-        perspective = self.get_perspective(self.currently_selected_label)
-        self.selected_person.face.add_image(perspective, image)
-        label = getattr(self, self.currently_selected_label)
-        face_image = self.selected_person.face.get_face_image(perspective)
-        qimage = convert_to_qt_format(face_image.face() if self.select_image_display_mode is ImageDisplayMode.FACES else face_image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
-        label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        try:
+            if self.selected_person is None or self.currently_selected_label is None:
+                self.statusbar.showMessage("No person selected or no image selected")
+                return
+            file_name = QFileDialog.getOpenFileName(self, "Open Image", "", "Image Files (*.png *.jpg *.jpeg *.bmp)")
+            if not file_name[0]:
+                return
+            image = cv2.imread(file_name[0])
+            perspective = self.get_perspective(self.currently_selected_label)
+            self.selected_person.face.add_image(perspective, image)
+            # label = getattr(self, self.currently_selected_label)
+            self.show_person(self.selected_person, self.image_display_mode)
+            # face_image = self.selected_person.face.get_face_image(perspective)
+            # qimage = convert_to_qt_format(face_image.face() if self.select_image_display_mode is ImageDisplayMode.FACES else face_image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            # label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        except Exception as e:
+            print(e)
+            self.statusbar.showMessage("Error opening image")
+        finally:
+            self.statusbar.showMessage("Image opened")
 
     def add_person_to_table(self, person):
         row_position = self.database_table.rowCount()
@@ -271,6 +283,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             person_features = person.face.get_features()
             features.extend(person_features)
             labels.extend([person.name] * len(person_features))
+            print(f"Extracted {len(person_features)} features from {person.name}")
 
         # Train the classifier.
         clf = train_classifier(features, labels)
@@ -385,7 +398,7 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             return
         
         # Extract faces from the frame.
-        face_box = extract_face(raw_frame)
+        face_box = extract_single_face_single_image(raw_frame)
         if face_box[0] == 0 and face_box[1] == 0 and face_box[2] == 0 and face_box[3] == 0:
             self.statusbar.showMessage("No face detected")
             return

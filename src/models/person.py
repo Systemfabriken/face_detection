@@ -1,12 +1,12 @@
 
 import numpy as np
 import cv2
-from face_identification.classifier import extract_face, extract_feature, extract_features
+from face_identification.classifier import extract_single_face_single_image, extract_feature, extract_features
 
 class FaceImage:
     def __init__(self, image: cv2.Mat):
         self.image: cv2.Mat = image
-        self.face_box = extract_face(image)
+        self.face_box = extract_single_face_single_image(image)
         # Throw exception if face is not found
         if not self.is_face():
             raise Exception("Face not found")

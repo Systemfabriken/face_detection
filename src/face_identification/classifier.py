@@ -14,7 +14,7 @@ from sklearn.model_selection import cross_val_score
 face_encoder = dlib.face_recognition_model_v1("./src/dlib_face_recognition_resnet_model_v1.dat")
 net = cv2.dnn.readNetFromCaffe("./src/face-detection/deploy.prototxt.txt", "./src/face-detection/res10_300x300_ssd_iter_140000.caffemodel")
 
-def extract_face(image: cv2.Mat) -> tuple[int, int, int, int]:
+def extract_single_face_single_image(image: cv2.Mat) -> tuple[int, int, int, int]:
     """
     Extracts a face from an image using OpenCV's DNN face detector.
     :param image: image
@@ -37,7 +37,7 @@ def extract_face(image: cv2.Mat) -> tuple[int, int, int, int]:
 
     return face
 
-def extract_faces(images: list[cv2.Mat]) -> list[tuple[int, cv2.Mat]]:
+def extract_single_face_multi_images(images: list[cv2.Mat]) -> list[tuple[int, cv2.Mat]]:
     """
     Extracts faces from images using OpenCV's DNN face detector. Returns a list of faces and their corresponding image index.
     :param images: list of images
@@ -46,13 +46,48 @@ def extract_faces(images: list[cv2.Mat]) -> list[tuple[int, cv2.Mat]]:
     faces = []
     for idx in range(len(images)):
         frame = images[idx]
-        (startX, startY, endX, endY) = extract_face(frame)
+        (startX, startY, endX, endY) = extract_single_face_single_image(frame)
         if (startX, startY, endX, endY) == (0, 0, 0, 0):
             faces.append((idx, None))
             continue
         face = frame[startY:endY, startX:endX]
         faces.append((idx, face))
     return faces
+
+def extract_multi_faces_single_image(image: cv2.Mat) -> list[tuple[int, int, int, int]]:
+    """
+    Extracts faces from an image using OpenCV's DNN face detector. Returns a list of faces and their corresponding bounding box.
+    :param image: image
+    :return: list of tuples (index of origin image, face bounding box (x, y, w, h))
+    """
+    (h, w) = image.shape[:2]
+    blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 1.0, (300, 300),
+                                 (104.0, 177.0, 123.0))
+    net.setInput(blob)
+    detections = net.forward()
+
+    faces = []
+    for i in range(0, detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+
+        face = (0, 0, 0, 0)
+        if confidence > 0.5:
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            face = box.astype("int")
+        faces.append((i, face))
+
+    return faces
+
+def get_face_from_image(image: cv2.Mat, bounding_box: tuple[int, int, int, int]) -> cv2.Mat:
+    """
+    Extracts a face from an image using a bounding box.
+    :param image: image
+    :param bounding_box: bounding box
+    :return: face
+    """
+    (startX, startY, endX, endY) = bounding_box
+    face = image[startY:endY, startX:endX]
+    return face
 
 def extract_feature(face: cv2.Mat) -> np.ndarray:
     """
