@@ -210,6 +210,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def save_model_as(self):
         print("Saving model as...")
         file_name = QFileDialog.getSaveFileName(self, "Save Database", self.model_path, "Model (*.secsystdb)")
+
+        # Check and append extension if not present
+        if not file_name[0].endswith('.secsystdb'):
+            file_name[0] += '.secsystdb'
+
         if file_name[0]:
             self.model_path = file_name[0]
             self.save_model()
@@ -249,6 +254,10 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         if not file_name[0]:
             return    
         clf_path = file_name[0]
+
+        # Check and append extension if not present
+        if not clf_path.endswith('.secsystsvm'):
+            clf_path += '.secsystsvm'
 
         # Extract features from all faces in the database.
         features = []
