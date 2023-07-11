@@ -1,4 +1,6 @@
+from enum import Enum
 from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import QFileDialog
 import cv2
 import numpy as np
 import dlib
@@ -8,8 +10,9 @@ import pickle
 # Local imports
 from ui_generated.pyqt5.classification_main_window import Ui_MainWindow
 from ui_generated.pyqt5.modify_person_dialog import Ui_Dialog as ModifyPersonDialog
-from face_identification.classifier import extract_faces, extract_features
+from face_identification.classifier import extract_faces, extract_face, extract_features, extract_feature, train_classifier, predict
 from modify_person_dialog import ModifyPersonDialog
+from models.person import Person
 
 def get_available_cameras(max_cameras=10) -> list[int]:
     cameras = []
@@ -56,7 +59,12 @@ class CameraThread(QtCore.QThread):
         print("Stopping camera thread...")
         self.cap.release()
 
+class ImageDisplayMode(Enum):
+    IMAGES = 0
+    FACES = 1
+
 class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
+
     def __init__(self, *args, **kwargs):
         QtWidgets.QMainWindow.__init__(self, *args, **kwargs)
         self.setWindowFlags(QtCore.Qt.Window)
@@ -67,6 +75,9 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.select_camera_box.addItems(["Camera " + str(i) for i in get_available_cameras()])
         self.select_camera_box.currentIndexChanged.connect(self.select_camera)
         self.camera_thread = None
+
+        self.image_display_mode: ImageDisplayMode = ImageDisplayMode.IMAGES
+        self.image_display_mode_selector.currentIndexChanged.connect(self.select_image_display_mode)
 
         self.right_above_label.on_click.connect(self.on_image_clicked)
         self.right_center_label.on_click.connect(self.on_image_clicked)
@@ -79,8 +90,11 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.left_below_label.on_click.connect(self.on_image_clicked)
         self.currently_selected_label = None
 
-        self.actionSave_Current.triggered.connect(self.save_model)
-        self.actionLoad.triggered.connect(self.load_model)
+        self.model_path = ""
+        self.actionSave.triggered.connect(self.save_model)
+        self.actionSave_As.triggered.connect(self.save_model_as)
+        self.actionOpen.triggered.connect(self.open_model)
+        self.actionExport_Classifier.triggered.connect(self.export_classifier)
 
         self.capture_image_button.setEnabled(False)
         self.capture_image_button.clicked.connect(self.capture_image)
@@ -89,7 +103,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.model["currently_selected_label"] = None
         self.model["features"] = None
         self.model["persons"] = dict()
-        self.selected_person = None
+        self.model["classifier"] = None
+        self.selected_person: Person = None
 
         self.database_table.setRowCount(0)
         self.database_table.selectionModel().selectionChanged.connect(self.row_selected)
@@ -97,6 +112,8 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.add_person_button.clicked.connect(self.add_person)
         self.remove_person_button.clicked.connect(self.remove_person)
         self.edit_person_button.clicked.connect(self.edit_person)
+        self.open_image_button.clicked.connect(self.open_image)
+        self.test_predict_button.clicked.connect(self.test_predict)
 
         self.init_from_model()
 
@@ -139,6 +156,22 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.statusbar.showMessage(self.selected_person.name + " removed")
         self.selected_person = None
 
+    def open_image(self):
+        print("Opening image...")
+        if self.selected_person is None or self.currently_selected_label is None:
+            self.statusbar.showMessage("No person selected or no image selected")
+            return
+        file_name = QFileDialog.getOpenFileName(self, "Open Image", "", "Image Files (*.png *.jpg *.jpeg *.bmp)")
+        if not file_name[0]:
+            return
+        image = cv2.imread(file_name[0])
+        perspective = self.get_perspective(self.currently_selected_label)
+        self.selected_person.face.add_image(perspective, image)
+        label = getattr(self, self.currently_selected_label)
+        face_image = self.selected_person.face.get_face_image(perspective)
+        qimage = convert_to_qt_format(face_image.face() if self.select_image_display_mode is ImageDisplayMode.FACES else face_image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+        label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+
     def add_person_to_table(self, person):
         row_position = self.database_table.rowCount()
         self.database_table.insertRow(row_position)
@@ -157,27 +190,88 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             selected_person_name = self.database_table.item(row, 0).text()
             # Retrieve the corresponding Person object from the dictionary.
             self.selected_person = self.model["persons"][selected_person_name]
+            self.show_person(self.selected_person, self.image_display_mode)
             print(f"Selected person: {self.selected_person.name} with status {self.selected_person.status.value}")
 
     def save_model(self):
         print("Saving model...")
+        if self.model_path == "":
+            self.save_model_as()
+            return
         self.model["currently_selected_label"] = self.currently_selected_label
-        with open("model.pickle", "wb") as f:
-            pickle.dump(self.model, f)
-        print("Model saved")
+        try:
+            with open(self.model_path, "wb") as f:
+                pickle.dump(self.model, f)
+        except Exception as e:
+            print(e)
+        finally:
+            print("Model saved")   
+
+    def save_model_as(self):
+        print("Saving model as...")
+        file_name = QFileDialog.getSaveFileName(self, "Save Database", self.model_path, "Model (*.secsystdb)")
+        if file_name[0]:
+            self.model_path = file_name[0]
+            self.save_model()
+        print("Model saved as: " + self.model_path)
 
     def load_model(self):
+        if self.model_path == "":
+            self.open_model()
+            return
         print("Loading model...")
-        with open("model.pickle", "rb") as f:
+        with open(self.model_path, "rb") as f:
             self.model = pickle.load(f)
         print("Model loaded")
         self.init_from_model()
+
+    def open_model(self):
+        print("Opening model...")
+        file_name = QFileDialog.getOpenFileName(self, "Open Database", self.model_path, "Model (*.secsystdb)")
+        if file_name[0]:
+            self.model_path = file_name[0]
+            self.load_model()
+        print("Model opened")
 
     def init_from_model(self):
         self.currently_selected_label = self.model["currently_selected_label"]
         if self.currently_selected_label is not None:
             self.on_image_clicked(self.currently_selected_label)
         self.show_model()
+
+    def export_classifier(self):
+        if self.model_path == "":
+            self.statusbar.showMessage("No model selected")
+            return
+
+        print("Exporting classifier...")
+        file_name = QFileDialog.getSaveFileName(self, "Export Classifier", self.model_path, "Classifier (*.secsystsvm)")
+        if not file_name[0]:
+            return    
+        clf_path = file_name[0]
+
+        # Extract features from all faces in the database.
+        features = []
+        labels = []
+        if self.model["persons"] is None:
+            self.statusbar.showMessage("No persons in database")
+            return
+        
+        for person_name in self.model["persons"]:
+            person: Person = self.model["persons"][person_name]
+            person_features = person.face.get_features()
+            features.extend(person_features)
+            labels.extend([person.name] * len(person_features))
+
+        # Train the classifier.
+        clf = train_classifier(features, labels)
+        self.model["classifier"] = clf
+
+        # Save the classifier.
+        with open(clf_path, "wb") as f:
+            pickle.dump(clf, f)
+
+        print("Classifier exported")
 
     @QtCore.pyqtSlot(QtGui.QImage)
     def setCameraImage(self, image):
@@ -200,6 +294,17 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.camera_thread.changePixmap.connect(self.setCameraImage)
             self.camera_thread.start()
 
+    def select_image_display_mode(self, index):
+        if index == 0:
+            self.statusbar.showMessage("Displaying Images Prior To Processing")
+            self.image_display_mode = ImageDisplayMode.IMAGES
+        elif index == 1:
+            self.statusbar.showMessage("Displaying Images After Processing")
+            self.image_display_mode = ImageDisplayMode.FACES
+        
+        if self.selected_person is not None:
+            self.show_person(self.selected_person, self.image_display_mode)
+
     @QtCore.pyqtSlot(str)
     def on_image_clicked(self, name):
         if self.currently_selected_label is None:
@@ -217,65 +322,156 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         else:
             self.statusbar.showMessage("No image selected")
 
+    def get_perspective(self, name) -> str:
+        if name == "left_above_label":
+            return "left_above"
+        elif name == "left_center_label":
+            return "left_center"
+        elif name == "left_below_label":
+            return "left_below"
+        elif name == "right_above_label":
+            return "right_above"
+        elif name == "right_center_label":
+            return "right_center"
+        elif name == "right_below_label":
+            return "right_below"
+        elif name == "front_above_label":
+            return "center_above"
+        elif name == "front_center_label":
+            return "center_center"
+        elif name == "front_below_label":
+            return "center_below"
+        else:
+            raise Exception("Invalid perspective")
+
     def capture_image(self):
-        if self.camera_thread is not None and self.currently_selected_label is not None:
+        print("Capturing image...")
+        if self.camera_thread is not None and self.currently_selected_label is not None and self.selected_person is not None:
+            raw_frame = self.camera_thread.raw_frame
+            if raw_frame is None:
+                self.statusbar.showMessage("No frame captured")
+                return
+            perspective = self.get_perspective(self.currently_selected_label)
+            self.selected_person.face.add_image(perspective, raw_frame)
             label = getattr(self, self.currently_selected_label)
-            label.setPixmap(QtGui.QPixmap.fromImage(self.camera_thread.curr_img_320_240))
-            self.model["images"][self.currently_selected_label] = (self.camera_thread.raw_frame, None)
+            face_image = self.selected_person.face.get_face_image(perspective)
+            qimage = convert_to_qt_format(face_image.face() if self.select_image_display_mode is ImageDisplayMode.FACES else face_image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.statusbar.showMessage("No camera selected or no image selected or no person selected")
 
-    def process_images(self):
-        print("Processing images...")
-        self.statusbar.showMessage("Processing images...")
+    def test_predict(self):
+        print("Testing prediction...")
+        if self.model["classifier"] is None:
+            self.statusbar.showMessage("No classifier in database")
+            return
+        
+        clf = self.model["classifier"]
 
-        # Extracting faces
-        frame_names = list(self.model["images"].keys())
-        faces = extract_faces([self.model["images"][frame_name][0] for frame_name in frame_names])
-        print("Found " + str(len(faces)) + " faces")
-        for idx, face in faces:
-            self.model["images"][frame_names[idx]] = (self.model["images"][frame_names[idx]][0], face)
-        self.display_faces()
+        if self.camera_thread is not None:
+            raw_frame = self.camera_thread.raw_frame
 
-        # Extracting features
-        faces_list = [face for idx, face in faces if face is not None]
-        self.model["features"] = extract_features(faces_list)
+        if raw_frame is None:
+            self.statusbar.showMessage("No frame captured")
+            return
+        
+        # Extract faces from the frame.
+        face_box = extract_face(raw_frame)
+        if face_box[0] == 0 and face_box[1] == 0 and face_box[2] == 0 and face_box[3] == 0:
+            self.statusbar.showMessage("No face detected")
+            return
+        
+        face = raw_frame[face_box[1]:face_box[3], face_box[0]:face_box[2]]
+        features = extract_feature(face)
 
-        self.statusbar.showMessage("Done processing images")
 
-    def display_faces(self):
-        print("Displaying faces...")
-        frame_names = list(self.model["images"].keys())
-        for frame_name in frame_names:
-            face = self.model["images"][frame_name][1]
-            label = getattr(self, frame_name)
-            if face is None:
-                label.set_invalid(True)
-                continue
-            else:
-                label.set_invalid(False)
-            # Display face
-            converted_face = convert_to_qt_format(face).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
-            label.setPixmap(QtGui.QPixmap.fromImage(converted_face))
+        # Predict the person.
+        person_name = predict(clf, features)
+        self.statusbar.showMessage("Predicted: " + person_name)
 
-    def show_model(self):
-        frame_names = list(self.model["images"].keys())
-        for frame_name in frame_names:
-            frame = self.model["images"][frame_name][0]
-            face = self.model["images"][frame_name][1]
-            label = getattr(self, frame_name)
-            if face is None:
-                qimage = convert_to_qt_format(frame).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
-                label.setPixmap(QtGui.QPixmap.fromImage(qimage))
-                continue
-            else:
-                qimage = convert_to_qt_format(face).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
-                label.setPixmap(QtGui.QPixmap.fromImage(qimage))
-                
+    def show_model(self):      
+        if self.selected_person is not None:
+            self.show_person(self.selected_person, self.image_display_mode)
+
         person_names = list(self.model["persons"].keys())
         self.database_table.setRowCount(len(person_names))
         for idx, person_name in enumerate(person_names):
             person = self.model["persons"][person_name]
             self.database_table.setItem(idx, 0, QtWidgets.QTableWidgetItem(person.name))
             self.database_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(person.status.value))
+
+    def show_person(self, person: Person, mode: ImageDisplayMode):
+        image = person.face.left_above
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            self.left_above_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.left_above_label.clear()
+            self.left_above_label.setText("No Image")
+
+        image = person.face.left_center
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            self.left_center_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.left_center_label.clear()
+            self.left_center_label.setText("No Image")
+
+        image = person.face.left_below
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            self.left_below_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.left_below_label.clear()
+            self.left_below_label.setText("No Image")
+
+        image = person.face.right_above
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            self.right_above_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.right_above_label.clear()
+            self.right_above_label.setText("No Image")
+
+        image = person.face.right_center
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            self.right_center_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.right_center_label.clear()
+            self.right_center_label.setText("No Image")
+
+        image = person.face.right_below
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            self.right_below_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.right_below_label.clear()
+            self.right_below_label.setText("No Image")
+
+        image = person.face.center_above
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)
+            self.front_above_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.front_above_label.clear()
+            self.front_above_label.setText("No Image")
+
+        image = person.face.center_center
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)            
+            self.front_center_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.front_center_label.clear()
+            self.front_center_label.setText("No Image")
+
+        image = person.face.center_below
+        if image is not None:
+            qimage = convert_to_qt_format(image.face() if mode is ImageDisplayMode.FACES else image.image).scaled(320, 240, QtCore.Qt.KeepAspectRatio)            
+            self.front_below_label.setPixmap(QtGui.QPixmap.fromImage(qimage))
+        else:
+            self.front_below_label.clear()
+            self.front_below_label.setText("No Image")
 
 if __name__ == '__main__':
     import sys

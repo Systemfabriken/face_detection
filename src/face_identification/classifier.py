@@ -1,7 +1,12 @@
 
+from typing import List
 import cv2
 import numpy as np
 import dlib
+from sklearn import svm
+from sklearn.model_selection import train_test_split
+from sklearn import metrics
+from sklearn.model_selection import cross_val_score
 
 # Initialize the face encoder
 # Note: This assumes you have dlib's face recognition model in your path
@@ -68,14 +73,33 @@ def extract_features(faces: list[cv2.Mat]) -> list:
     """
     return [extract_feature(face) for face in faces]
 
-def train_classifier():
-    # Use scikit-learn to train a classifier on the features
-    pass
+def train_classifier(features: List[np.array], labels: List[str]) -> svm.SVC:
+    """
+    Trains a SVM classifier on the given features and labels.
+    :param features: list of features
+    :param labels: list of labels
+    :return: trained classifier
+    """
+
+    # Initialize the classifier
+    clf = svm.SVC(probability=True)
+
+    # Train the classifier
+    clf.fit(features, labels)
+
+    return clf
 
 def evaluate_classifier():
     # Use scikit-learn to evaluate the classifier using cross-validation
     pass
 
-def predict():
-    # Use scikit-learn to predict the class of a new face
-    pass
+def predict(clf: svm.SVC, features: np.array) -> str:
+    """
+    Predicts the class of a new face.
+    :param clf: trained classifier
+    :param features: features of the new face
+    :return: predicted class
+    """
+
+    # Predict the class of the new face
+    return clf.predict([features])[0]
