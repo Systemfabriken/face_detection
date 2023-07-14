@@ -222,13 +222,14 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def save_model_as(self):
         print("Saving model as...")
         file_name = QFileDialog.getSaveFileName(self, "Save Database", self.model_path, "Model (*.secsystdb)")
+        filename: str = file_name[0]
 
         # Check and append extension if not present
-        if not file_name[0].endswith('.secsystdb'):
-            file_name[0] += '.secsystdb'
+        if not filename.endswith('.secsystdb'):
+            filename += '.secsystdb'
 
-        if file_name[0]:
-            self.model_path = file_name[0]
+        if filename:
+            self.model_path = filename
             self.save_model()
         print("Model saved as: " + self.model_path)
 

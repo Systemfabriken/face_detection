@@ -31,7 +31,7 @@ environment:
 	source $(VENV_PATH)
 
 	# Install the necessary Python libraries inside the virtual environment
-	source $(VENV_PATH) && pip3 install pyqt5 pyqt5-tools opencv-python-headless dlib face_recognition sklearn
+	source $(VENV_PATH) && pip3 install pyqt5 pyqt5-tools opencv-python-headless dlib face_recognition scikit-learn
 
 .PHONY: environment
 
